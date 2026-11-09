@@ -9,12 +9,13 @@ class MusicPlayer:
     def __init__(self, root):
         self.root = root
         self.root.title("My Music Player")
-        self.root.geometry("550x500")
-        self.root.minsize(450, 400)
+        self.root.geometry("550x550")
+        self.root.minsize(450, 450)
         self.root.configure(bg="#1E1E2E")
 
         pygame.init()
         pygame.mixer.init()
+        pygame.mixer.music.set_volume(0.7)
 
         self.music_directory = ""
         self.current_song = None
@@ -23,14 +24,13 @@ class MusicPlayer:
         self.setup_ui()
 
     def setup_ui(self):
-        title = tk.Label(
+        tk.Label(
             self.root,
             text="♫ MY MUSIC PLAYER",
             font=("Segoe UI", 22, "bold"),
             bg="#1E1E2E",
             fg="#CBA6F7"
-        )
-        title.pack(pady=20)
+        ).pack(pady=20)
 
         self.song_title = tk.Label(
             self.root,
@@ -50,7 +50,7 @@ class MusicPlayer:
             selectbackground="#CBA6F7",
             selectforeground="#1E1E2E",
             relief="flat",
-            height=12
+            height=10
         )
         self.play_list.pack(
             fill="both",
@@ -76,8 +76,52 @@ class MusicPlayer:
             pady=9
         ).pack(fill="x", padx=25, pady=5)
 
+        # Volume control
+        volume_frame = tk.Frame(self.root, bg="#1E1E2E")
+        volume_frame.pack(fill="x", padx=25, pady=12)
+
+        tk.Label(
+            volume_frame,
+            text="🔊 Volume",
+            font=("Segoe UI", 10, "bold"),
+            bg="#1E1E2E",
+            fg="#CDD6F4"
+        ).pack(side="left")
+
+        self.volume_value = tk.Label(
+            volume_frame,
+            text="70%",
+            font=("Segoe UI", 10, "bold"),
+            bg="#1E1E2E",
+            fg="#CBA6F7"
+        )
+        self.volume_value.pack(side="right")
+
+        self.volume_slider = tk.Scale(
+            volume_frame,
+            from_=0,
+            to=100,
+            orient="horizontal",
+            command=self.change_volume,
+            bg="#1E1E2E",
+            fg="#CDD6F4",
+            troughcolor="#45475A",
+            activebackground="#CBA6F7",
+            highlightthickness=0,
+            relief="flat",
+            showvalue=False
+        )
+        self.volume_slider.set(70)
+        self.volume_slider.pack(
+            side="left",
+            fill="x",
+            expand=True,
+            padx=15
+        )
+
+        # Playback controls
         controls = tk.Frame(self.root, bg="#1E1E2E")
-        controls.pack(pady=15)
+        controls.pack(pady=12)
 
         buttons = [
             ("▶ PLAY", self.play, "#A6E3A1"),
@@ -126,7 +170,6 @@ class MusicPlayer:
         ]
 
         songs.sort(key=str.lower)
-
         self.play_list.delete(0, tk.END)
 
         for song in songs:
@@ -144,6 +187,11 @@ class MusicPlayer:
         )
         self.song_title.config(text="Select a song to play")
 
+    def change_volume(self, value):
+        volume = float(value) / 100
+        pygame.mixer.music.set_volume(volume)
+        self.volume_value.config(text=f"{int(float(value))}%")
+
     def play(self):
         selection = self.play_list.curselection()
 
@@ -152,9 +200,6 @@ class MusicPlayer:
                 "No Song Selected",
                 "Please select a song from the playlist."
             )
-            return
-
-        if not self.music_directory:
             return
 
         song = self.play_list.get(selection[0])
