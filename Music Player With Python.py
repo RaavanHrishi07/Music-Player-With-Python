@@ -4,16 +4,18 @@ import json
 import random
 import tkinter as tk
 from tkinter import filedialog, messagebox
+
 import pygame
+from PIL import Image, ImageTk, ImageDraw
 
 
 class MusicPlayer:
     def __init__(self, root):
         self.root = root
-        self.root.title("Python Music Player")
-        self.root.geometry("750x720")
-        self.root.minsize(650, 650)
-        self.root.configure(bg="#121212")
+        self.root.title("Melody - Python Music Player")
+        self.root.geometry("850x780")
+        self.root.minsize(750, 700)
+        self.root.configure(bg="#101014")
 
         pygame.mixer.init()
 
@@ -26,6 +28,7 @@ class MusicPlayer:
             os.path.dirname(os.path.abspath(__file__)),
             "favourites.json"
         )
+
         self.load_favourites()
 
         self.song_duration = 0
@@ -44,6 +47,8 @@ class MusicPlayer:
         self.progress_value = tk.DoubleVar(value=0)
         self.search_text = tk.StringVar()
 
+        self.album_image = None
+
         self.create_ui()
         self.set_volume()
         self.refresh_playlist()
@@ -51,41 +56,110 @@ class MusicPlayer:
 
         self.root.protocol("WM_DELETE_WINDOW", self.close_player)
 
+    # ---------------- UI ----------------
+
     def create_ui(self):
+        header = tk.Frame(self.root, bg="#101014")
+        header.pack(fill="x", padx=25, pady=(18, 8))
+
         tk.Label(
-            self.root,
-            text="MUSIC PLAYER",
-            font=("Arial", 24, "bold"),
-            bg="#121212",
+            header,
+            text="MELODY",
+            font=("Arial", 25, "bold"),
+            bg="#101014",
             fg="#1DB954"
-        ).pack(pady=12)
+        ).pack(side="left")
+
+        tk.Label(
+            header,
+            text="YOUR PERSONAL MUSIC PLAYER",
+            font=("Arial", 9, "bold"),
+            bg="#101014",
+            fg="#888888"
+        ).pack(side="right", pady=10)
+
+        # Album artwork section
+        artwork_section = tk.Frame(
+            self.root,
+            bg="#18181F",
+            padx=20,
+            pady=15
+        )
+        artwork_section.pack(fill="x", padx=25, pady=10)
+
+        self.artwork_canvas = tk.Canvas(
+            artwork_section,
+            width=190,
+            height=190,
+            bg="#252530",
+            highlightthickness=0
+        )
+        self.artwork_canvas.pack(side="left", padx=(10, 25))
+
+        self.show_default_artwork()
+
+        song_info = tk.Frame(
+            artwork_section,
+            bg="#18181F"
+        )
+        song_info.pack(side="left", fill="both", expand=True)
+
+        tk.Label(
+            song_info,
+            text="NOW PLAYING",
+            font=("Arial", 9, "bold"),
+            bg="#18181F",
+            fg="#1DB954"
+        ).pack(anchor="w", pady=(20, 8))
 
         self.now_playing = tk.Label(
-            self.root,
+            song_info,
             text="No song selected",
-            font=("Arial", 12),
-            bg="#121212",
+            font=("Arial", 17, "bold"),
+            bg="#18181F",
             fg="white",
-            wraplength=650
+            wraplength=450,
+            justify="left"
         )
-        self.now_playing.pack(pady=8)
+        self.now_playing.pack(anchor="w", pady=5)
+
+        self.song_subtitle = tk.Label(
+            song_info,
+            text="Choose a music folder to begin",
+            font=("Arial", 10),
+            bg="#18181F",
+            fg="#999999"
+        )
+        self.song_subtitle.pack(anchor="w", pady=5)
+
+        self.status_label = tk.Label(
+            song_info,
+            text="READY TO PLAY",
+            font=("Arial", 9, "bold"),
+            bg="#18181F",
+            fg="#1DB954"
+        )
+        self.status_label.pack(anchor="w", pady=15)
 
         # Search section
-        search_frame = tk.Frame(self.root, bg="#121212")
-        search_frame.pack(fill="x", padx=25, pady=8)
+        search_frame = tk.Frame(self.root, bg="#101014")
+        search_frame.pack(fill="x", padx=25, pady=10)
 
         tk.Label(
             search_frame,
-            text="SEARCH:",
-            bg="#121212",
-            fg="white",
-            font=("Arial", 10, "bold")
-        ).pack(side="left", padx=(0, 10))
+            text="YOUR LIBRARY",
+            font=("Arial", 12, "bold"),
+            bg="#101014",
+            fg="white"
+        ).pack(anchor="w", pady=(0, 8))
+
+        search_row = tk.Frame(search_frame, bg="#101014")
+        search_row.pack(fill="x")
 
         self.search_entry = tk.Entry(
-            search_frame,
+            search_row,
             textvariable=self.search_text,
-            bg="#292929",
+            bg="#22222B",
             fg="white",
             insertbackground="white",
             relief="flat",
@@ -95,54 +169,65 @@ class MusicPlayer:
             side="left",
             fill="x",
             expand=True,
-            ipady=7
+            ipady=9,
+            padx=(0, 8)
         )
+
+        tk.Button(
+            search_row,
+            text="CLEAR",
+            command=lambda: self.search_text.set(""),
+            bg="#30303A",
+            fg="white",
+            relief="flat",
+            padx=12,
+            pady=7
+        ).pack(side="left")
 
         self.search_text.trace_add(
             "write",
             lambda *args: self.refresh_playlist()
         )
 
-        tk.Button(
-            search_frame,
-            text="CLEAR",
-            command=lambda: self.search_text.set(""),
-            bg="#404040",
-            fg="white",
-            relief="flat",
-            padx=10
-        ).pack(side="left", padx=8)
-
-        # Playlist filter
-        filter_frame = tk.Frame(self.root, bg="#121212")
-        filter_frame.pack(pady=5)
+        # Playlist filters
+        filter_frame = tk.Frame(self.root, bg="#101014")
+        filter_frame.pack(fill="x", padx=25, pady=5)
 
         self.all_button = tk.Button(
             filter_frame,
-            text="SHOW ALL",
+            text="ALL SONGS",
             command=self.show_all_songs,
             bg="#1DB954",
             fg="black",
             relief="flat",
-            padx=15,
+            padx=14,
             pady=7
         )
-        self.all_button.pack(side="left", padx=5)
+        self.all_button.pack(side="left", padx=(0, 8))
 
         self.favourites_button = tk.Button(
             filter_frame,
             text="★ FAVOURITES",
             command=self.show_favourite_songs,
-            bg="#292929",
+            bg="#30303A",
             fg="white",
             relief="flat",
-            padx=15,
+            padx=14,
             pady=7
         )
-        self.favourites_button.pack(side="left", padx=5)
+        self.favourites_button.pack(side="left")
+
+        self.song_count_label = tk.Label(
+            filter_frame,
+            text="0 SONGS",
+            bg="#101014",
+            fg="#999999",
+            font=("Arial", 9, "bold")
+        )
+        self.song_count_label.pack(side="right")
 
         # Playlist
-        playlist_frame = tk.Frame(self.root, bg="#121212")
+        playlist_frame = tk.Frame(self.root, bg="#101014")
         playlist_frame.pack(
             fill="both",
             expand=True,
@@ -155,55 +240,61 @@ class MusicPlayer:
 
         self.playlist = tk.Listbox(
             playlist_frame,
-            bg="#202020",
-            fg="white",
+            bg="#1B1B23",
+            fg="#EEEEEE",
             selectbackground="#1DB954",
             selectforeground="black",
             font=("Arial", 11),
             bd=0,
             highlightthickness=0,
+            activestyle="none",
             yscrollcommand=scrollbar.set
         )
         self.playlist.pack(fill="both", expand=True)
 
         scrollbar.config(command=self.playlist.yview)
-        self.playlist.bind("<Double-Button-1>", self.play_selected)
 
-        # Favourite action
+        self.playlist.bind(
+            "<Double-Button-1>",
+            self.play_selected
+        )
+
+        # Playlist actions
+        action_frame = tk.Frame(self.root, bg="#101014")
+        action_frame.pack(fill="x", padx=25, pady=5)
+
         tk.Button(
-            self.root,
+            action_frame,
             text="★ TOGGLE FAVOURITE",
             command=self.toggle_favourite,
-            bg="#292929",
+            bg="#30303A",
             fg="#FFD700",
-            activebackground="#404040",
-            font=("Arial", 10, "bold"),
             relief="flat",
-            padx=15,
-            pady=7
-        ).pack(pady=5)
+            padx=12,
+            pady=8
+        ).pack(side="left")
 
         tk.Button(
-            self.root,
-            text="OPEN MUSIC FOLDER",
+            action_frame,
+            text="+ OPEN MUSIC FOLDER",
             command=self.load_folder,
             bg="#1DB954",
             fg="black",
-            font=("Arial", 10, "bold"),
+            font=("Arial", 9, "bold"),
             relief="flat",
-            padx=15,
+            padx=12,
             pady=8
-        ).pack(pady=7)
+        ).pack(side="right")
 
-        # Progress bar
-        progress_frame = tk.Frame(self.root, bg="#121212")
-        progress_frame.pack(fill="x", padx=30, pady=5)
+        # Progress section
+        progress_frame = tk.Frame(self.root, bg="#101014")
+        progress_frame.pack(fill="x", padx=30, pady=8)
 
         self.current_time_label = tk.Label(
             progress_frame,
             text="00:00",
-            bg="#121212",
-            fg="white"
+            bg="#101014",
+            fg="#AAAAAA"
         )
         self.current_time_label.pack(side="left")
 
@@ -215,9 +306,9 @@ class MusicPlayer:
             variable=self.progress_value,
             command=self.seek_song,
             showvalue=False,
-            bg="#121212",
+            bg="#101014",
             fg="white",
-            troughcolor="#404040",
+            troughcolor="#383840",
             activebackground="#1DB954",
             highlightthickness=0,
             sliderlength=15
@@ -228,6 +319,7 @@ class MusicPlayer:
             expand=True,
             padx=10
         )
+
         self.progress_slider.bind(
             "<ButtonPress-1>",
             self.start_seeking
@@ -240,78 +332,84 @@ class MusicPlayer:
         self.total_time_label = tk.Label(
             progress_frame,
             text="00:00",
-            bg="#121212",
-            fg="white"
+            bg="#101014",
+            fg="#AAAAAA"
         )
         self.total_time_label.pack(side="right")
 
         # Playback controls
-        controls = tk.Frame(self.root, bg="#121212")
-        controls.pack(pady=12)
+        controls = tk.Frame(self.root, bg="#101014")
+        controls.pack(pady=10)
 
-        button_style = {
-            "bg": "#292929",
+        style = {
+            "bg": "#292933",
             "fg": "white",
             "activebackground": "#1DB954",
             "activeforeground": "black",
-            "font": ("Arial", 10, "bold"),
+            "font": ("Arial", 9, "bold"),
             "relief": "flat",
             "width": 9,
-            "pady": 8
+            "pady": 9
         }
 
         tk.Button(
             controls,
             text="PREV",
             command=self.previous_song,
-            **button_style
-        ).grid(row=0, column=0, padx=4)
+            **style
+        ).grid(row=0, column=0, padx=3)
 
         tk.Button(
             controls,
             text="PLAY",
             command=self.play_music,
-            **button_style
-        ).grid(row=0, column=1, padx=4)
+            bg="#1DB954",
+            fg="black",
+            activebackground="#17A34A",
+            font=("Arial", 10, "bold"),
+            relief="flat",
+            width=9,
+            pady=9
+        ).grid(row=0, column=1, padx=3)
 
         tk.Button(
             controls,
             text="PAUSE",
             command=self.pause_music,
-            **button_style
-        ).grid(row=0, column=2, padx=4)
+            **style
+        ).grid(row=0, column=2, padx=3)
 
         tk.Button(
             controls,
             text="RESUME",
             command=self.resume_music,
-            **button_style
-        ).grid(row=0, column=3, padx=4)
+            **style
+        ).grid(row=0, column=3, padx=3)
 
         tk.Button(
             controls,
             text="STOP",
             command=self.stop_music,
-            **button_style
-        ).grid(row=0, column=4, padx=4)
+            **style
+        ).grid(row=0, column=4, padx=3)
 
         tk.Button(
             controls,
             text="NEXT",
             command=self.next_song,
-            **button_style
-        ).grid(row=0, column=5, padx=4)
+            **style
+        ).grid(row=0, column=5, padx=3)
 
         # Volume
-        volume_frame = tk.Frame(self.root, bg="#121212")
+        volume_frame = tk.Frame(self.root, bg="#101014")
         volume_frame.pack(pady=5)
 
         tk.Label(
             volume_frame,
             text="VOLUME",
-            bg="#121212",
+            bg="#101014",
             fg="white",
-            font=("Arial", 10, "bold")
+            font=("Arial", 9, "bold")
         ).pack(side="left", padx=10)
 
         self.volume_slider = tk.Scale(
@@ -321,61 +419,117 @@ class MusicPlayer:
             orient="horizontal",
             variable=self.volume,
             command=self.set_volume,
-            bg="#121212",
+            bg="#101014",
             fg="white",
-            troughcolor="#404040",
+            troughcolor="#383840",
             activebackground="#1DB954",
             highlightthickness=0,
-            length=200
+            length=190
         )
         self.volume_slider.pack(side="left")
 
         self.volume_label = tk.Label(
             volume_frame,
             text="70%",
-            bg="#121212",
-            fg="white"
+            bg="#101014",
+            fg="#AAAAAA"
         )
         self.volume_label.pack(side="left", padx=8)
 
-        # Shuffle and Repeat
-        mode_frame = tk.Frame(self.root, bg="#121212")
+        # Shuffle and repeat
+        mode_frame = tk.Frame(self.root, bg="#101014")
         mode_frame.pack(pady=8)
 
         self.shuffle_button = tk.Button(
             mode_frame,
             text="SHUFFLE: OFF",
             command=self.toggle_shuffle,
-            bg="#292929",
+            bg="#292933",
             fg="white",
-            activebackground="#1DB954",
             relief="flat",
             padx=15,
             pady=8
         )
-        self.shuffle_button.pack(side="left", padx=10)
+        self.shuffle_button.pack(side="left", padx=8)
 
         self.repeat_button = tk.Button(
             mode_frame,
             text="REPEAT: OFF",
             command=self.toggle_repeat,
-            bg="#292929",
+            bg="#292933",
             fg="white",
-            activebackground="#1DB954",
             relief="flat",
             padx=15,
             pady=8
         )
-        self.repeat_button.pack(side="left", padx=10)
+        self.repeat_button.pack(side="left", padx=8)
 
-        self.status_label = tk.Label(
-            self.root,
-            text="Ready to play",
-            bg="#121212",
-            fg="#aaaaaa",
-            font=("Arial", 9)
+    # ---------------- ALBUM ART ----------------
+
+    def show_default_artwork(self):
+        self.artwork_canvas.delete("all")
+
+        self.artwork_canvas.create_rectangle(
+            0, 0, 190, 190,
+            fill="#252530",
+            outline=""
         )
-        self.status_label.pack(pady=5)
+
+        self.artwork_canvas.create_text(
+            95, 80,
+            text="♫",
+            font=("Arial", 75, "bold"),
+            fill="#1DB954"
+        )
+
+        self.artwork_canvas.create_text(
+            95, 150,
+            text="MELODY",
+            font=("Arial", 13, "bold"),
+            fill="white"
+        )
+
+        self.album_image = None
+
+    def load_album_art(self, song_path):
+        folder = os.path.dirname(song_path)
+        filename = os.path.splitext(os.path.basename(song_path))[0]
+
+        candidates = [
+            os.path.join(folder, filename + ".jpg"),
+            os.path.join(folder, filename + ".jpeg"),
+            os.path.join(folder, filename + ".png"),
+            os.path.join(folder, "cover.jpg"),
+            os.path.join(folder, "cover.jpeg"),
+            os.path.join(folder, "cover.png"),
+            os.path.join(folder, "folder.jpg"),
+            os.path.join(folder, "folder.png"),
+            os.path.join(folder, "album.jpg"),
+            os.path.join(folder, "album.png")
+        ]
+
+        for image_path in candidates:
+            if os.path.isfile(image_path):
+                try:
+                    image = Image.open(image_path).convert("RGB")
+                    image = image.resize(
+                        (190, 190),
+                        Image.Resampling.LANCZOS
+                    )
+
+                    self.album_image = ImageTk.PhotoImage(image)
+                    self.artwork_canvas.delete("all")
+                    self.artwork_canvas.create_image(
+                        95,
+                        95,
+                        image=self.album_image
+                    )
+                    return
+
+                except (OSError, ValueError):
+                    continue
+
+        self.show_default_artwork()
 
     # ---------------- FAVOURITES ----------------
 
@@ -438,12 +592,12 @@ class MusicPlayer:
     def show_all_songs(self):
         self.show_favourites = False
         self.all_button.config(bg="#1DB954", fg="black")
-        self.favourites_button.config(bg="#292929", fg="white")
+        self.favourites_button.config(bg="#30303A", fg="white")
         self.refresh_playlist()
 
     def show_favourite_songs(self):
         self.show_favourites = True
-        self.all_button.config(bg="#292929", fg="white")
+        self.all_button.config(bg="#30303A", fg="white")
         self.favourites_button.config(bg="#1DB954", fg="black")
         self.refresh_playlist()
 
@@ -495,6 +649,10 @@ class MusicPlayer:
             self.playlist.selection_set(visible_index)
             self.playlist.activate(visible_index)
 
+        self.song_count_label.config(
+            text=f"{len(self.filtered_indices)} SONGS"
+        )
+
     # ---------------- MUSIC LIBRARY ----------------
 
     def load_folder(self):
@@ -516,13 +674,19 @@ class MusicPlayer:
                 )
 
         self.refresh_playlist()
+        self.show_default_artwork()
+
+        self.now_playing.config(text="No song selected")
+        self.song_subtitle.config(
+            text="Choose a song from your library"
+        )
 
         if self.songs:
             self.status_label.config(
-                text=f"{len(self.songs)} songs loaded"
+                text=f"{len(self.songs)} SONGS LOADED"
             )
         else:
-            self.status_label.config(text="No supported music files found")
+            self.status_label.config(text="NO MUSIC FILES FOUND")
             messagebox.showinfo(
                 "No Music Found",
                 "No MP3, WAV or OGG files were found."
@@ -579,12 +743,17 @@ class MusicPlayer:
             pygame.mixer.music.play()
 
             self.now_playing.config(
-                text=f"Now Playing: {os.path.basename(song_path)}"
+                text=os.path.basename(song_path)
+            )
+            self.song_subtitle.config(
+                text=os.path.dirname(song_path)
             )
 
+            self.load_album_art(song_path)
             self.refresh_playlist()
             self.reset_progress()
-            self.status_label.config(text="Playing")
+
+            self.status_label.config(text="PLAYING")
 
         except (pygame.error, OSError) as error:
             self.is_stopped = True
@@ -599,13 +768,13 @@ class MusicPlayer:
         if not self.is_stopped and not self.is_paused:
             pygame.mixer.music.pause()
             self.is_paused = True
-            self.status_label.config(text="Paused")
+            self.status_label.config(text="PAUSED")
 
     def resume_music(self):
         if self.is_paused:
             pygame.mixer.music.unpause()
             self.is_paused = False
-            self.status_label.config(text="Playing")
+            self.status_label.config(text="PLAYING")
         elif self.is_stopped and self.current_index >= 0:
             self.play_song(self.current_index)
 
@@ -616,7 +785,7 @@ class MusicPlayer:
         self.song_finished_handled = True
         self.seek_offset = 0
         self.reset_progress()
-        self.status_label.config(text="Stopped")
+        self.status_label.config(text="STOPPED")
 
     def next_song(self):
         if not self.songs:
@@ -654,13 +823,13 @@ class MusicPlayer:
                 text="SHUFFLE: ON",
                 fg="#1DB954"
             )
-            self.status_label.config(text="Shuffle enabled")
+            self.status_label.config(text="SHUFFLE ENABLED")
         else:
             self.shuffle_button.config(
                 text="SHUFFLE: OFF",
                 fg="white"
             )
-            self.status_label.config(text="Shuffle disabled")
+            self.status_label.config(text="SHUFFLE DISABLED")
 
     def toggle_repeat(self):
         modes = ["OFF", "ONE", "ALL"]
@@ -676,7 +845,7 @@ class MusicPlayer:
         )
 
         self.status_label.config(
-            text=f"Repeat mode: {self.repeat_mode}"
+            text=f"REPEAT {self.repeat_mode}"
         )
 
     def handle_song_finished(self):
@@ -704,7 +873,7 @@ class MusicPlayer:
         else:
             self.is_stopped = True
             self.is_paused = False
-            self.status_label.config(text="Playlist finished")
+            self.status_label.config(text="PLAYLIST FINISHED")
             self.reset_progress()
 
     # ---------------- VOLUME ----------------
