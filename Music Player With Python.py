@@ -1,5 +1,6 @@
 
 import os
+import json
 import random
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -10,14 +11,22 @@ class MusicPlayer:
     def __init__(self, root):
         self.root = root
         self.root.title("Python Music Player")
-        self.root.geometry("750x650")
-        self.root.minsize(650, 600)
+        self.root.geometry("750x720")
+        self.root.minsize(650, 650)
         self.root.configure(bg="#121212")
 
         pygame.mixer.init()
 
         self.songs = []
         self.current_index = -1
+        self.filtered_indices = []
+
+        self.favourites = set()
+        self.favourites_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "favourites.json"
+        )
+        self.load_favourites()
 
         self.song_duration = 0
         self.seek_offset = 0
@@ -29,25 +38,27 @@ class MusicPlayer:
 
         self.shuffle_enabled = False
         self.repeat_mode = "OFF"
+        self.show_favourites = False
 
         self.volume = tk.DoubleVar(value=70)
         self.progress_value = tk.DoubleVar(value=0)
+        self.search_text = tk.StringVar()
 
         self.create_ui()
         self.set_volume()
+        self.refresh_playlist()
         self.update_progress()
 
         self.root.protocol("WM_DELETE_WINDOW", self.close_player)
 
     def create_ui(self):
-        title = tk.Label(
+        tk.Label(
             self.root,
             text="MUSIC PLAYER",
             font=("Arial", 24, "bold"),
             bg="#121212",
             fg="#1DB954"
-        )
-        title.pack(pady=15)
+        ).pack(pady=12)
 
         self.now_playing = tk.Label(
             self.root,
@@ -59,8 +70,85 @@ class MusicPlayer:
         )
         self.now_playing.pack(pady=8)
 
+        # Search section
+        search_frame = tk.Frame(self.root, bg="#121212")
+        search_frame.pack(fill="x", padx=25, pady=8)
+
+        tk.Label(
+            search_frame,
+            text="SEARCH:",
+            bg="#121212",
+            fg="white",
+            font=("Arial", 10, "bold")
+        ).pack(side="left", padx=(0, 10))
+
+        self.search_entry = tk.Entry(
+            search_frame,
+            textvariable=self.search_text,
+            bg="#292929",
+            fg="white",
+            insertbackground="white",
+            relief="flat",
+            font=("Arial", 11)
+        )
+        self.search_entry.pack(
+            side="left",
+            fill="x",
+            expand=True,
+            ipady=7
+        )
+
+        self.search_text.trace_add(
+            "write",
+            lambda *args: self.refresh_playlist()
+        )
+
+        tk.Button(
+            search_frame,
+            text="CLEAR",
+            command=lambda: self.search_text.set(""),
+            bg="#404040",
+            fg="white",
+            relief="flat",
+            padx=10
+        ).pack(side="left", padx=8)
+
+        # Playlist filter
+        filter_frame = tk.Frame(self.root, bg="#121212")
+        filter_frame.pack(pady=5)
+
+        self.all_button = tk.Button(
+            filter_frame,
+            text="SHOW ALL",
+            command=self.show_all_songs,
+            bg="#1DB954",
+            fg="black",
+            relief="flat",
+            padx=15,
+            pady=7
+        )
+        self.all_button.pack(side="left", padx=5)
+
+        self.favourites_button = tk.Button(
+            filter_frame,
+            text="★ FAVOURITES",
+            command=self.show_favourite_songs,
+            bg="#292929",
+            fg="white",
+            relief="flat",
+            padx=15,
+            pady=7
+        )
+        self.favourites_button.pack(side="left", padx=5)
+
+        # Playlist
         playlist_frame = tk.Frame(self.root, bg="#121212")
-        playlist_frame.pack(fill="both", expand=True, padx=25, pady=10)
+        playlist_frame.pack(
+            fill="both",
+            expand=True,
+            padx=25,
+            pady=8
+        )
 
         scrollbar = tk.Scrollbar(playlist_frame)
         scrollbar.pack(side="right", fill="y")
@@ -81,6 +169,20 @@ class MusicPlayer:
         scrollbar.config(command=self.playlist.yview)
         self.playlist.bind("<Double-Button-1>", self.play_selected)
 
+        # Favourite action
+        tk.Button(
+            self.root,
+            text="★ TOGGLE FAVOURITE",
+            command=self.toggle_favourite,
+            bg="#292929",
+            fg="#FFD700",
+            activebackground="#404040",
+            font=("Arial", 10, "bold"),
+            relief="flat",
+            padx=15,
+            pady=7
+        ).pack(pady=5)
+
         tk.Button(
             self.root,
             text="OPEN MUSIC FOLDER",
@@ -91,9 +193,9 @@ class MusicPlayer:
             relief="flat",
             padx=15,
             pady=8
-        ).pack(pady=8)
+        ).pack(pady=7)
 
-        # Progress bar and time labels
+        # Progress bar
         progress_frame = tk.Frame(self.root, bg="#121212")
         progress_frame.pack(fill="x", padx=30, pady=5)
 
@@ -120,9 +222,20 @@ class MusicPlayer:
             highlightthickness=0,
             sliderlength=15
         )
-        self.progress_slider.pack(side="left", fill="x", expand=True, padx=10)
-        self.progress_slider.bind("<ButtonPress-1>", self.start_seeking)
-        self.progress_slider.bind("<ButtonRelease-1>", self.finish_seeking)
+        self.progress_slider.pack(
+            side="left",
+            fill="x",
+            expand=True,
+            padx=10
+        )
+        self.progress_slider.bind(
+            "<ButtonPress-1>",
+            self.start_seeking
+        )
+        self.progress_slider.bind(
+            "<ButtonRelease-1>",
+            self.finish_seeking
+        )
 
         self.total_time_label = tk.Label(
             progress_frame,
@@ -134,7 +247,7 @@ class MusicPlayer:
 
         # Playback controls
         controls = tk.Frame(self.root, bg="#121212")
-        controls.pack(pady=15)
+        controls.pack(pady=12)
 
         button_style = {
             "bg": "#292929",
@@ -152,46 +265,46 @@ class MusicPlayer:
             text="PREV",
             command=self.previous_song,
             **button_style
-        ).grid(row=0, column=0, padx=5)
+        ).grid(row=0, column=0, padx=4)
 
         tk.Button(
             controls,
             text="PLAY",
             command=self.play_music,
             **button_style
-        ).grid(row=0, column=1, padx=5)
+        ).grid(row=0, column=1, padx=4)
 
         tk.Button(
             controls,
             text="PAUSE",
             command=self.pause_music,
             **button_style
-        ).grid(row=0, column=2, padx=5)
+        ).grid(row=0, column=2, padx=4)
 
         tk.Button(
             controls,
             text="RESUME",
             command=self.resume_music,
             **button_style
-        ).grid(row=0, column=3, padx=5)
+        ).grid(row=0, column=3, padx=4)
 
         tk.Button(
             controls,
             text="STOP",
             command=self.stop_music,
             **button_style
-        ).grid(row=0, column=4, padx=5)
+        ).grid(row=0, column=4, padx=4)
 
         tk.Button(
             controls,
             text="NEXT",
             command=self.next_song,
             **button_style
-        ).grid(row=0, column=5, padx=5)
+        ).grid(row=0, column=5, padx=4)
 
-        # Volume control
+        # Volume
         volume_frame = tk.Frame(self.root, bg="#121212")
-        volume_frame.pack(pady=8)
+        volume_frame.pack(pady=5)
 
         tk.Label(
             volume_frame,
@@ -225,9 +338,9 @@ class MusicPlayer:
         )
         self.volume_label.pack(side="left", padx=8)
 
-        # Shuffle and Repeat controls
+        # Shuffle and Repeat
         mode_frame = tk.Frame(self.root, bg="#121212")
-        mode_frame.pack(pady=12)
+        mode_frame.pack(pady=8)
 
         self.shuffle_button = tk.Button(
             mode_frame,
@@ -236,8 +349,6 @@ class MusicPlayer:
             bg="#292929",
             fg="white",
             activebackground="#1DB954",
-            activeforeground="black",
-            font=("Arial", 10, "bold"),
             relief="flat",
             padx=15,
             pady=8
@@ -251,8 +362,6 @@ class MusicPlayer:
             bg="#292929",
             fg="white",
             activebackground="#1DB954",
-            activeforeground="black",
-            font=("Arial", 10, "bold"),
             relief="flat",
             padx=15,
             pady=8
@@ -268,6 +377,126 @@ class MusicPlayer:
         )
         self.status_label.pack(pady=5)
 
+    # ---------------- FAVOURITES ----------------
+
+    def load_favourites(self):
+        try:
+            if os.path.exists(self.favourites_file):
+                with open(
+                    self.favourites_file,
+                    "r",
+                    encoding="utf-8"
+                ) as file:
+                    data = json.load(file)
+
+                if isinstance(data, list):
+                    self.favourites = set(data)
+
+        except (OSError, json.JSONDecodeError):
+            self.favourites = set()
+
+    def save_favourites(self):
+        try:
+            with open(
+                self.favourites_file,
+                "w",
+                encoding="utf-8"
+            ) as file:
+                json.dump(
+                    sorted(self.favourites),
+                    file,
+                    indent=4
+                )
+        except OSError as error:
+            messagebox.showerror(
+                "Save Error",
+                f"Unable to save favourites:\n{error}"
+            )
+
+    def toggle_favourite(self):
+        index = self.get_selected_song_index()
+
+        if index is None:
+            messagebox.showinfo(
+                "Select Song",
+                "Please select a song first."
+            )
+            return
+
+        song_path = self.songs[index]
+
+        if song_path in self.favourites:
+            self.favourites.remove(song_path)
+            self.status_label.config(text="Removed from favourites")
+        else:
+            self.favourites.add(song_path)
+            self.status_label.config(text="Added to favourites")
+
+        self.save_favourites()
+        self.refresh_playlist()
+
+    def show_all_songs(self):
+        self.show_favourites = False
+        self.all_button.config(bg="#1DB954", fg="black")
+        self.favourites_button.config(bg="#292929", fg="white")
+        self.refresh_playlist()
+
+    def show_favourite_songs(self):
+        self.show_favourites = True
+        self.all_button.config(bg="#292929", fg="white")
+        self.favourites_button.config(bg="#1DB954", fg="black")
+        self.refresh_playlist()
+
+    def get_selected_song_index(self):
+        selection = self.playlist.curselection()
+
+        if not selection:
+            return None
+
+        visible_index = selection[0]
+
+        if visible_index >= len(self.filtered_indices):
+            return None
+
+        return self.filtered_indices[visible_index]
+
+    # ---------------- SEARCH AND PLAYLIST ----------------
+
+    def refresh_playlist(self):
+        if not hasattr(self, "playlist"):
+            return
+
+        self.playlist.delete(0, tk.END)
+        self.filtered_indices = []
+
+        query = self.search_text.get().strip().lower()
+
+        for index, song_path in enumerate(self.songs):
+            filename = os.path.basename(song_path)
+
+            if self.show_favourites and song_path not in self.favourites:
+                continue
+
+            if query and query not in filename.lower():
+                continue
+
+            display_name = filename
+
+            if song_path in self.favourites:
+                display_name = "★ " + display_name
+
+            self.playlist.insert(tk.END, display_name)
+            self.filtered_indices.append(index)
+
+        if self.current_index in self.filtered_indices:
+            visible_index = self.filtered_indices.index(
+                self.current_index
+            )
+            self.playlist.selection_set(visible_index)
+            self.playlist.activate(visible_index)
+
+    # ---------------- MUSIC LIBRARY ----------------
+
     def load_folder(self):
         folder = filedialog.askdirectory()
 
@@ -277,15 +506,16 @@ class MusicPlayer:
         self.stop_music()
         self.songs = []
         self.current_index = -1
-        self.playlist.delete(0, tk.END)
 
         supported_formats = (".mp3", ".wav", ".ogg")
 
         for filename in sorted(os.listdir(folder)):
             if filename.lower().endswith(supported_formats):
-                full_path = os.path.join(folder, filename)
-                self.songs.append(full_path)
-                self.playlist.insert(tk.END, filename)
+                self.songs.append(
+                    os.path.join(folder, filename)
+                )
+
+        self.refresh_playlist()
 
         if self.songs:
             self.status_label.config(
@@ -295,14 +525,16 @@ class MusicPlayer:
             self.status_label.config(text="No supported music files found")
             messagebox.showinfo(
                 "No Music Found",
-                "No MP3, WAV or OGG files were found in this folder."
+                "No MP3, WAV or OGG files were found."
             )
 
     def play_selected(self, event=None):
-        selection = self.playlist.curselection()
+        index = self.get_selected_song_index()
 
-        if selection:
-            self.play_song(selection[0])
+        if index is not None:
+            self.play_song(index)
+
+    # ---------------- PLAYBACK ----------------
 
     def play_music(self):
         if not self.songs:
@@ -312,20 +544,17 @@ class MusicPlayer:
             )
             return
 
-        selection = self.playlist.curselection()
+        index = self.get_selected_song_index()
 
-        if selection:
-            self.play_song(selection[0])
+        if index is not None:
+            self.play_song(index)
         elif self.current_index >= 0 and not self.is_stopped:
             self.resume_music()
         else:
             self.play_song(0)
 
     def play_song(self, index):
-        if not self.songs:
-            return
-
-        if index < 0 or index >= len(self.songs):
+        if not self.songs or not 0 <= index < len(self.songs):
             return
 
         try:
@@ -348,20 +577,19 @@ class MusicPlayer:
                 self.song_duration = 0
 
             pygame.mixer.music.play()
+
             self.now_playing.config(
                 text=f"Now Playing: {os.path.basename(song_path)}"
             )
 
-            self.playlist.selection_clear(0, tk.END)
-            self.playlist.selection_set(index)
-            self.playlist.activate(index)
-
+            self.refresh_playlist()
             self.reset_progress()
             self.status_label.config(text="Playing")
 
         except (pygame.error, OSError) as error:
             self.is_stopped = True
             self.song_finished_handled = True
+
             messagebox.showerror(
                 "Playback Error",
                 f"Unable to play this song:\n{error}"
@@ -416,6 +644,8 @@ class MusicPlayer:
         previous_index = (self.current_index - 1) % len(self.songs)
         self.play_song(previous_index)
 
+    # ---------------- SHUFFLE AND REPEAT ----------------
+
     def toggle_shuffle(self):
         self.shuffle_enabled = not self.shuffle_enabled
 
@@ -435,20 +665,15 @@ class MusicPlayer:
     def toggle_repeat(self):
         modes = ["OFF", "ONE", "ALL"]
         current_position = modes.index(self.repeat_mode)
+
         self.repeat_mode = modes[
             (current_position + 1) % len(modes)
         ]
 
-        if self.repeat_mode == "OFF":
-            self.repeat_button.config(
-                text="REPEAT: OFF",
-                fg="white"
-            )
-        else:
-            self.repeat_button.config(
-                text=f"REPEAT: {self.repeat_mode}",
-                fg="#1DB954"
-            )
+        self.repeat_button.config(
+            text=f"REPEAT: {self.repeat_mode}",
+            fg="#1DB954" if self.repeat_mode != "OFF" else "white"
+        )
 
         self.status_label.config(
             text=f"Repeat mode: {self.repeat_mode}"
@@ -482,10 +707,16 @@ class MusicPlayer:
             self.status_label.config(text="Playlist finished")
             self.reset_progress()
 
+    # ---------------- VOLUME ----------------
+
     def set_volume(self, value=None):
         volume_value = self.volume.get() / 100
         pygame.mixer.music.set_volume(volume_value)
-        self.volume_label.config(text=f"{int(self.volume.get())}%")
+        self.volume_label.config(
+            text=f"{int(self.volume.get())}%"
+        )
+
+    # ---------------- PROGRESS AND SEEK ----------------
 
     def format_time(self, seconds):
         seconds = max(0, int(seconds))
@@ -578,6 +809,8 @@ class MusicPlayer:
             500,
             self.update_progress
         )
+
+    # ---------------- CLOSE PLAYER ----------------
 
     def close_player(self):
         if self.progress_job is not None:
