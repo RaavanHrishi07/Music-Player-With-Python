@@ -19,6 +19,7 @@ class MusicPlayer:
 
         self.music_directory = ""
         self.current_song = None
+        self.current_index = -1
         self.supported_formats = (".mp3", ".wav", ".ogg")
 
         self.setup_ui()
@@ -124,9 +125,11 @@ class MusicPlayer:
         controls.pack(pady=12)
 
         buttons = [
+            ("⏮ PREV", self.previous_song, "#89B4FA"),
             ("▶ PLAY", self.play, "#A6E3A1"),
+            ("⏭ NEXT", self.next_song, "#89B4FA"),
             ("⏸ PAUSE", self.pause, "#F9E2AF"),
-            ("▶ RESUME", self.resume, "#89B4FA"),
+            ("▶ RESUME", self.resume, "#CBA6F7"),
             ("⏹ STOP", self.stop, "#F38BA8")
         ]
 
@@ -135,14 +138,14 @@ class MusicPlayer:
                 controls,
                 text=text,
                 command=command,
-                font=("Segoe UI", 9, "bold"),
+                font=("Segoe UI", 8, "bold"),
                 bg=color,
                 fg="#1E1E2E",
                 relief="flat",
                 cursor="hand2",
-                padx=10,
+                padx=7,
                 pady=10
-            ).pack(side="left", padx=4)
+            ).pack(side="left", padx=2)
 
         self.status_label = tk.Label(
             self.root,
@@ -161,7 +164,11 @@ class MusicPlayer:
         if not directory:
             return
 
+        pygame.mixer.music.stop()
+
         self.music_directory = directory
+        self.current_song = None
+        self.current_index = -1
 
         songs = [
             file for file in os.listdir(directory)
@@ -192,24 +199,32 @@ class MusicPlayer:
         pygame.mixer.music.set_volume(volume)
         self.volume_value.config(text=f"{int(float(value))}%")
 
-    def play(self):
-        selection = self.play_list.curselection()
+    def play_song(self, index):
+        total_songs = self.play_list.size()
 
-        if not selection:
+        if total_songs == 0:
             messagebox.showwarning(
-                "No Song Selected",
-                "Please select a song from the playlist."
+                "Empty Playlist",
+                "Please select a folder containing music files."
             )
             return
 
-        song = self.play_list.get(selection[0])
+        index = index % total_songs
+        song = self.play_list.get(index)
         song_path = os.path.join(self.music_directory, song)
 
         try:
             pygame.mixer.music.load(song_path)
             pygame.mixer.music.play()
 
+            self.current_index = index
             self.current_song = song
+
+            self.play_list.selection_clear(0, tk.END)
+            self.play_list.selection_set(index)
+            self.play_list.activate(index)
+            self.play_list.see(index)
+
             self.song_title.config(text=f"♫ Now Playing: {song}")
             self.status_label.config(text="Music is playing")
 
@@ -218,6 +233,52 @@ class MusicPlayer:
                 "Playback Error",
                 f"Unable to play this audio file.\n\n{error}"
             )
+
+    def play(self):
+        selection = self.play_list.curselection()
+
+        if selection:
+            index = selection[0]
+        elif self.current_index >= 0:
+            index = self.current_index
+        else:
+            messagebox.showwarning(
+                "No Song Selected",
+                "Please select a song from the playlist."
+            )
+            return
+
+        self.play_song(index)
+
+    def next_song(self):
+        total_songs = self.play_list.size()
+
+        if total_songs == 0:
+            messagebox.showwarning(
+                "Empty Playlist",
+                "Please load a music folder first."
+            )
+            return
+
+        if self.current_index == -1:
+            self.play_song(0)
+        else:
+            self.play_song((self.current_index + 1) % total_songs)
+
+    def previous_song(self):
+        total_songs = self.play_list.size()
+
+        if total_songs == 0:
+            messagebox.showwarning(
+                "Empty Playlist",
+                "Please load a music folder first."
+            )
+            return
+
+        if self.current_index == -1:
+            self.play_song(total_songs - 1)
+        else:
+            self.play_song((self.current_index - 1) % total_songs)
 
     def pause(self):
         if pygame.mixer.music.get_busy():
